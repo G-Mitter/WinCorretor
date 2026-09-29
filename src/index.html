@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Text Corrector</title>
+  </head>
+  <body>
+    <main class="container">
+      <h1>Corretor de Texto IA</h1>
+
+      <div class="input-group">
+        <label for="api-key">Chave de API:</label>
+        <input type="password" id="api-key" placeholder="Cole sua API Key aqui..." />
+      </div>
+
+      <div class="input-group">
+        <label for="input-text">Texto Original:</label>
+        <textarea id="input-text" placeholder="Digite ou selecione o texto..."></textarea>
+      </div>
+
+      <div class="controls">
+        <select id="style-select">
+          <option value="grammar">Apenas Gramática</option>
+          <option value="professional">Profissional</option>
+          <option value="polite">Educado</option>
+          <option value="casual">Despojado</option>
+          <option value="shorter">Resumido</option>
+          <option value="detailed">Detalhado</option>
+        </select>
+        <button id="process-btn">Processar</button>
+      </div>
+
+      <div class="input-group">
+        <label for="output-text">Resultado:</label>
+        <textarea id="output-text" readonly placeholder="O resultado aparecerá aqui..."></textarea>
+      </div>
+    </main>
+    <script type="module" src="/main.ts"></script>
+  </body>
+</html>
