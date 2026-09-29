@@ -7,18 +7,14 @@
 // - Ctrl+Alt+Q/W/E/C e números: no teclado ABNT2 viram AltGr (/, ?, °, ₢, ¹²³…).
 
 use tauri::plugin::TauriPlugin;
-use tauri::{AppHandle, Emitter, Runtime};
+use tauri::{AppHandle, Runtime};
 use tauri_plugin_global_shortcut::{
     Builder, GlobalShortcutExt, Shortcut, ShortcutEvent, ShortcutState,
 };
 
-use crate::capture;
+use crate::flow;
 
 pub const DEFAULT_SHORTCUT: &str = "Ctrl+Alt+O";
-
-/// Eventos enviados ao front-end.
-pub const SELECTION_CAPTURED_EVENT: &str = "selection-captured";
-pub const CAPTURE_FAILED_EVENT: &str = "capture-failed";
 
 pub fn plugin<R: Runtime>() -> TauriPlugin<R> {
     Builder::new().with_handler(on_shortcut).build()
@@ -38,19 +34,7 @@ fn on_shortcut<R: Runtime>(app: &AppHandle<R>, _shortcut: &Shortcut, event: Shor
         return;
     }
 
-    // A captura espera teclas e o clipboard: roda fora da thread da interface.
+    // A captura espera teclas e a IA espera a rede: roda fora da thread da interface.
     let app = app.clone();
-    tauri::async_runtime::spawn_blocking(move || match capture::capture_selection(&app) {
-        Ok(selection) => {
-            println!(
-                "Texto capturado: {} caracteres",
-                selection.text.chars().count()
-            );
-            let _ = app.emit(SELECTION_CAPTURED_EVENT, selection);
-        }
-        Err(err) => {
-            eprintln!("Falha na captura: {err}");
-            let _ = app.emit(CAPTURE_FAILED_EVENT, err.to_string());
-        }
-    });
+    tauri::async_runtime::spawn_blocking(move || flow::run(&app));
 }

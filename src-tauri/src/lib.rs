@@ -6,6 +6,7 @@
 mod capture;
 mod commands;
 mod error;
+mod flow;
 mod hotkey;
 mod llm;
 mod prompts;
@@ -18,6 +19,9 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Em desenvolvimento, lê GEMINI_API_KEY do arquivo src-tauri/.env (fora do Git).
+    let _ = dotenvy::dotenv();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(hotkey::plugin())

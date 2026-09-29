@@ -20,8 +20,26 @@ pub enum AppError {
     #[error("Erro ao acessar a área de transferência: {0}")]
     Clipboard(String),
 
-    // Usado pelo GeminiProvider na issue #5.
-    #[allow(dead_code)]
+    #[error("Texto muito longo ({0} caracteres). O limite é {1}.")]
+    TextTooLong(usize, usize),
+
+    #[error("Chave da API do Gemini não configurada. Crie o arquivo src-tauri/.env com GEMINI_API_KEY=...")]
+    MissingApiKey,
+
+    #[error("A chave da API do Gemini foi recusada. Confira o valor no arquivo .env.")]
+    InvalidApiKey,
+
+    #[error(
+        "Limite gratuito do Gemini atingido. Aguarde um minuto ou troque o modelo em GEMINI_MODEL."
+    )]
+    RateLimited,
+
+    #[error("Sem conexão com o Gemini: {0}")]
+    Network(String),
+
+    #[error("O Gemini recusou o texto ({0}).")]
+    Blocked(String),
+
     #[error("Erro no provedor de IA: {0}")]
     Llm(String),
 }
