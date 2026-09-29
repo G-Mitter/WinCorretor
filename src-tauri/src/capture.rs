@@ -5,11 +5,24 @@
 // 2. guarda a janela ativa e o clipboard atual;
 // 3. simula Ctrl+C e espera o Windows avisar que algo foi copiado;
 // 4. lê o texto e devolve o clipboard original ao usuário.
+//
+// E a colagem do resultado (`paste_result`), que faz o caminho inverso.
 
 use tauri::{AppHandle, Runtime};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
 use crate::error::{AppError, AppResult};
+
+/// Como o resultado chegou ao usuário.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PasteOutcome {
+    /// O texto selecionado foi substituído pelo resultado.
+    #[cfg_attr(not(windows), allow(dead_code))]
+    Pasted,
+    /// Não era seguro colar (o usuário mudou de janela): o resultado ficou no clipboard.
+    CopiedOnly,
+}
 
 /// Resultado da captura: o texto e a janela de onde ele veio
 /// (usada na issue #6 para colar o resultado no mesmo lugar).
@@ -91,4 +104,52 @@ pub fn capture_selection<R: Runtime>(_app: &AppHandle<R>) -> AppResult<Selection
     Err(AppError::Capture(
         "captura disponível apenas no Windows".into(),
     ))
+}
+
+/// Cola `text` no lugar da seleção e depois restaura o clipboard do usuário.
+/// Se o usuário trocou de janela enquanto a IA respondia, não cola: deixa o
+/// resultado no clipboard para ele colar onde quiser.
+#[cfg(windows)]
+pub fn paste_result<R: Runtime>(
+    app: &AppHandle<R>,
+    selection: &Selection,
+    text: &str,
+) -> AppResult<PasteOutcome> {
+    use std::thread::sleep;
+    use std::time::Duration;
+
+    use crate::win32;
+
+    /// Tempo para o programa de destino ler o clipboard antes de restaurarmos.
+    const PASTE_SETTLE: Duration = Duration::from_millis(300);
+
+    let same_window = win32::foreground_window() == selection.source_window;
+    if !same_window || !win32::wait_keys_released(Duration::from_millis(1000)) {
+        write_text(app, text)?;
+        return Ok(PasteOutcome::CopiedOnly);
+    }
+
+    let previous = app.clipboard().read_text().ok();
+    write_text(app, text)?;
+
+    if !win32::send_ctrl_v() {
+        // O resultado continua no clipboard: o usuário pode colar manualmente.
+        return Ok(PasteOutcome::CopiedOnly);
+    }
+
+    sleep(PASTE_SETTLE);
+    if let Some(previous) = previous {
+        let _ = app.clipboard().write_text(previous);
+    }
+    Ok(PasteOutcome::Pasted)
+}
+
+#[cfg(not(windows))]
+pub fn paste_result<R: Runtime>(
+    app: &AppHandle<R>,
+    _selection: &Selection,
+    text: &str,
+) -> AppResult<PasteOutcome> {
+    write_text(app, text)?;
+    Ok(PasteOutcome::CopiedOnly)
 }

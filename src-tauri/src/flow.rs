@@ -1,11 +1,11 @@
 // src-tauri/src/flow.rs
 //
-// Fluxo disparado pelo atalho: captura a seleção e pede a correção à IA.
-// Na issue #7 ganha o último passo: colar o resultado no lugar do texto.
+// Fluxo disparado pelo atalho:
+// captura a seleção → pede a correção à IA → cola o resultado no lugar.
 
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
-use crate::capture::{self, Selection};
+use crate::capture::{self, PasteOutcome, Selection};
 use crate::prompts::TextStyle;
 use crate::state::AppState;
 
@@ -24,6 +24,7 @@ struct RewriteDone {
     original: String,
     result: String,
     style: TextStyle,
+    outcome: PasteOutcome,
 }
 
 /// Executa o fluxo completo. Bloqueia: chame fora da thread da interface.
@@ -44,28 +45,41 @@ pub fn run<R: Runtime>(app: &AppHandle<R>) {
     );
     let _ = app.emit(SELECTION_CAPTURED_EVENT, selection.clone());
 
-    rewrite(app, selection);
+    rewrite_and_paste(app, selection);
 }
 
-fn rewrite<R: Runtime>(app: &AppHandle<R>, selection: Selection) {
+fn rewrite_and_paste<R: Runtime>(app: &AppHandle<R>, selection: Selection) {
     let state = app.state::<AppState>();
     let result = tauri::async_runtime::block_on(state.llm.rewrite(&selection.text, DEFAULT_STYLE));
 
-    match result {
-        Ok(result) => {
-            println!("Resposta da IA: {} caracteres", result.chars().count());
-            let _ = app.emit(
-                REWRITE_DONE_EVENT,
-                RewriteDone {
-                    original: selection.text,
-                    result,
-                    style: DEFAULT_STYLE,
-                },
-            );
-        }
+    let result = match result {
+        Ok(result) => result,
         Err(err) => {
             eprintln!("Falha na IA: {err}");
             let _ = app.emit(REWRITE_FAILED_EVENT, err.to_string());
+            return;
         }
-    }
+    };
+    println!("Resposta da IA: {} caracteres", result.chars().count());
+
+    // Se nem copiar para o clipboard der certo, avisa como falha.
+    let outcome = match capture::paste_result(app, &selection, &result) {
+        Ok(outcome) => outcome,
+        Err(err) => {
+            eprintln!("Falha ao colar: {err}");
+            let _ = app.emit(REWRITE_FAILED_EVENT, err.to_string());
+            return;
+        }
+    };
+    println!("Resultado entregue: {outcome:?}");
+
+    let _ = app.emit(
+        REWRITE_DONE_EVENT,
+        RewriteDone {
+            original: selection.text,
+            result,
+            style: DEFAULT_STYLE,
+            outcome,
+        },
+    );
 }
