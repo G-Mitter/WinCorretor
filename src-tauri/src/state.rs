@@ -4,7 +4,7 @@
 
 use std::sync::Mutex;
 
-use crate::llm::{LlmProvider, MockProvider};
+use crate::llm::{GeminiProvider, LlmProvider};
 
 pub struct AppState {
     pub llm: Box<dyn LlmProvider>,
@@ -14,9 +14,10 @@ pub struct AppState {
 
 impl AppState {
     pub fn new() -> Self {
+        let gemini = GeminiProvider::from_env();
+        println!("Provedor de IA: Gemini ({})", gemini.model());
         Self {
-            // Trocado pelo GeminiProvider na issue #5.
-            llm: Box::new(MockProvider),
+            llm: Box::new(gemini),
             hotkey_error: Mutex::new(None),
         }
     }

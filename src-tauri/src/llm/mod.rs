@@ -3,12 +3,17 @@
 // Contrato comum dos provedores de IA. Trocar Gemini por Groq (ou outro)
 // vira só uma nova implementação deste trait, sem mexer no resto do app.
 
+mod gemini;
+#[cfg(test)]
 mod mock;
 
-pub use mock::MockProvider;
+pub use gemini::GeminiProvider;
 
 use crate::error::AppResult;
 use crate::prompts::TextStyle;
+
+/// Limite de tamanho por pedido: protege a cota gratuita e a latência.
+pub const MAX_INPUT_CHARS: usize = 8_000;
 
 #[async_trait::async_trait]
 pub trait LlmProvider: Send + Sync {
