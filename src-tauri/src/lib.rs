@@ -9,6 +9,7 @@ mod error;
 mod flow;
 mod hotkey;
 mod llm;
+mod notify;
 mod prompts;
 mod state;
 #[cfg(windows)]
@@ -24,6 +25,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(hotkey::plugin())
         .manage(AppState::new())
         .invoke_handler(tauri::generate_handler![

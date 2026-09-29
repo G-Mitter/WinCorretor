@@ -2,10 +2,14 @@
 //
 // Fluxo disparado pelo atalho:
 // captura a seleção → pede a correção à IA → cola o resultado no lugar.
+// Erros viram notificação do Windows, já que a janela do app fica escondida.
+
+use std::time::Instant;
 
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
-use crate::capture::{self, PasteOutcome, Selection};
+use crate::capture::{self, PasteOutcome};
+use crate::notify;
 use crate::prompts::TextStyle;
 use crate::state::AppState;
 
@@ -29,49 +33,56 @@ struct RewriteDone {
 
 /// Executa o fluxo completo. Bloqueia: chame fora da thread da interface.
 pub fn run<R: Runtime>(app: &AppHandle<R>) {
+    let state = app.state::<AppState>();
+
+    // Ignora o atalho se a correção anterior ainda não terminou.
+    let Some(_busy) = state.try_begin_correction() else {
+        println!("Atalho ignorado: já existe uma correção em andamento.");
+        return;
+    };
+
+    let started = Instant::now();
+
+    // 1. Captura
     let selection = match capture::capture_selection(app) {
         Ok(selection) => selection,
-        Err(err) => {
-            eprintln!("Falha na captura: {err}");
-            let _ = app.emit(CAPTURE_FAILED_EVENT, err.to_string());
-            return;
-        }
+        Err(err) => return fail(app, CAPTURE_FAILED_EVENT, &err.to_string()),
     };
-
-    println!(
-        "Texto capturado: {} caracteres. Pedindo estilo {}...",
-        selection.text.chars().count(),
-        DEFAULT_STYLE.label()
-    );
+    let captured_at = Instant::now();
     let _ = app.emit(SELECTION_CAPTURED_EVENT, selection.clone());
 
-    rewrite_and_paste(app, selection);
-}
-
-fn rewrite_and_paste<R: Runtime>(app: &AppHandle<R>, selection: Selection) {
-    let state = app.state::<AppState>();
-    let result = tauri::async_runtime::block_on(state.llm.rewrite(&selection.text, DEFAULT_STYLE));
-
-    let result = match result {
+    // 2. IA
+    let rewritten =
+        tauri::async_runtime::block_on(state.llm.rewrite(&selection.text, DEFAULT_STYLE));
+    let result = match rewritten {
         Ok(result) => result,
-        Err(err) => {
-            eprintln!("Falha na IA: {err}");
-            let _ = app.emit(REWRITE_FAILED_EVENT, err.to_string());
-            return;
-        }
+        Err(err) => return fail(app, REWRITE_FAILED_EVENT, &err.to_string()),
     };
-    println!("Resposta da IA: {} caracteres", result.chars().count());
+    let rewritten_at = Instant::now();
 
-    // Se nem copiar para o clipboard der certo, avisa como falha.
+    // 3. Colar
     let outcome = match capture::paste_result(app, &selection, &result) {
         Ok(outcome) => outcome,
-        Err(err) => {
-            eprintln!("Falha ao colar: {err}");
-            let _ = app.emit(REWRITE_FAILED_EVENT, err.to_string());
-            return;
-        }
+        Err(err) => return fail(app, REWRITE_FAILED_EVENT, &err.to_string()),
     };
-    println!("Resultado entregue: {outcome:?}");
+    let finished_at = Instant::now();
+
+    println!(
+        "Correção \"{}\" concluída ({outcome:?}) em {} ms: captura {} ms, IA {} ms, colar {} ms, {} caracteres.",
+        DEFAULT_STYLE.label(),
+        (finished_at - started).as_millis(),
+        (captured_at - started).as_millis(),
+        (rewritten_at - captured_at).as_millis(),
+        (finished_at - rewritten_at).as_millis(),
+        selection.text.chars().count(),
+    );
+
+    if outcome == PasteOutcome::CopiedOnly {
+        notify::show(
+            app,
+            "Você trocou de janela durante a correção. O resultado foi copiado: cole com Ctrl+V.",
+        );
+    }
 
     let _ = app.emit(
         REWRITE_DONE_EVENT,
@@ -82,4 +93,11 @@ fn rewrite_and_paste<R: Runtime>(app: &AppHandle<R>, selection: Selection) {
             outcome,
         },
     );
+}
+
+/// Registra a falha no terminal, avisa a janela e mostra uma notificação.
+fn fail<R: Runtime>(app: &AppHandle<R>, event: &str, message: &str) {
+    eprintln!("Falha: {message}");
+    let _ = app.emit(event, message);
+    notify::show(app, message);
 }
