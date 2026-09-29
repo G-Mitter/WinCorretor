@@ -3683,6 +3683,7 @@ dependencies = [
  "tauri-plugin-clipboard-manager",
  "tauri-plugin-global-shortcut",
  "thiserror 2.0.19",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

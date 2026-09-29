@@ -9,6 +9,14 @@ pub enum AppError {
     #[error("Nenhum texto encontrado para processar.")]
     EmptyText,
 
+    // Usado só no Windows; em outros sistemas a captura não existe.
+    #[cfg_attr(not(windows), allow(dead_code))]
+    #[error("Nenhum texto selecionado. Selecione um texto antes de usar o atalho.")]
+    NothingSelected,
+
+    #[error("Não foi possível capturar a seleção: {0}")]
+    Capture(String),
+
     #[error("Erro ao acessar a área de transferência: {0}")]
     Clipboard(String),
 

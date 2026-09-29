@@ -95,3 +95,18 @@ kbd {
   border-radius: 4px;
   font-size: 0.9em;
 }
+
+#captured {
+  max-width: 90%;
+  margin: 0 auto;
+  padding: 0.8em;
+  text-align: left;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-radius: 8px;
+  background-color: rgba(127, 127, 127, 0.12);
+}
+
+#captured:empty {
+  display: none;
+}

@@ -21,3 +21,9 @@ pub async fn process_clipboard_text(
     capture::write_text(&app, &result)?;
     Ok(result)
 }
+
+/// Devolve a mensagem de erro do atalho global, se ele não pôde ser registrado.
+#[tauri::command]
+pub fn hotkey_error(state: State<'_, AppState>) -> Option<String> {
+    state.hotkey_error()
+}
