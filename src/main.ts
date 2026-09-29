@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
-// Tela de teste do fluxo: captura (issue #4) + correção pelo Gemini (issue #5).
+// Tela de teste do fluxo: captura (#4) → correção pelo Gemini (#5) → colar no lugar (#6).
 // Na Fase 2 este arquivo vira a lógica do popup.
 
 type Selection = {
@@ -13,6 +13,7 @@ type RewriteDone = {
   original: string;
   result: string;
   style: string;
+  outcome: "pasted" | "copiedOnly";
 };
 
 const $ = (id: string) => document.getElementById(id);
@@ -47,7 +48,11 @@ window.addEventListener("DOMContentLoaded", async () => {
   });
 
   await listen<RewriteDone>("rewrite-done", (event) => {
-    setStatus("Pronto.");
+    setStatus(
+      event.payload.outcome === "pasted"
+        ? "Pronto: texto substituído."
+        : "Você trocou de janela: o resultado foi copiado. Cole com Ctrl+V onde quiser.",
+    );
     show("result", event.payload.result);
   });
 

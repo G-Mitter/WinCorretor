@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use windows_sys::Win32::System::DataExchange::GetClipboardSequenceNumber;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
-    KEYEVENTF_KEYUP, VIRTUAL_KEY, VK_C, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
+    KEYEVENTF_KEYUP, VIRTUAL_KEY, VK_C, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT, VK_V,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
 
@@ -46,10 +46,19 @@ pub fn clipboard_sequence() -> u32 {
 
 /// Simula Ctrl+C na janela ativa.
 pub fn send_ctrl_c() -> bool {
+    send_ctrl_plus(VK_C)
+}
+
+/// Simula Ctrl+V na janela ativa.
+pub fn send_ctrl_v() -> bool {
+    send_ctrl_plus(VK_V)
+}
+
+fn send_ctrl_plus(letter: VIRTUAL_KEY) -> bool {
     let inputs = [
         key(VK_CONTROL, 0),
-        key(VK_C, 0),
-        key(VK_C, KEYEVENTF_KEYUP),
+        key(letter, 0),
+        key(letter, KEYEVENTF_KEYUP),
         key(VK_CONTROL, KEYEVENTF_KEYUP),
     ];
     let sent = unsafe {
