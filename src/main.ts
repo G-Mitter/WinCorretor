@@ -1,22 +1,15 @@
-import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
-let greetInputEl: HTMLInputElement | null;
-let greetMsgEl: HTMLElement | null;
+// Por enquanto só confirma que o atalho global chega ao front-end.
+// Na Fase 2 este arquivo vira a lógica do popup.
+window.addEventListener("DOMContentLoaded", async () => {
+  const statusEl = document.querySelector<HTMLElement>("#status");
+  let count = 0;
 
-async function greet() {
-  if (greetMsgEl && greetInputEl) {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    greetMsgEl.textContent = await invoke("greet", {
-      name: greetInputEl.value,
-    });
-  }
-}
-
-window.addEventListener("DOMContentLoaded", () => {
-  greetInputEl = document.querySelector("#greet-input");
-  greetMsgEl = document.querySelector("#greet-msg");
-  document.querySelector("#greet-form")?.addEventListener("submit", (e) => {
-    e.preventDefault();
-    greet();
+  await listen("shortcut-pressed", () => {
+    count += 1;
+    if (statusEl) {
+      statusEl.textContent = `Atalho recebido ${count}x`;
+    }
   });
 });
