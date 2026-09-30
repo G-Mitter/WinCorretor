@@ -14,6 +14,10 @@ impl LlmProvider for MockProvider {
     async fn rewrite(&self, text: &str, style: TextStyle) -> AppResult<String> {
         Ok(format!("[{}]: {}", style.label(), text))
     }
+
+    fn describe(&self) -> String {
+        "Simulado".into()
+    }
 }
 
 #[cfg(test)]

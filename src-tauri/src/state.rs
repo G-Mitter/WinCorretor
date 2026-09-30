@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 
 use crate::capture::Selection;
-use crate::llm::{GeminiProvider, LlmProvider};
+use crate::llm::{self, LlmProvider};
 
 pub struct AppState {
     pub llm: Box<dyn LlmProvider>,
@@ -38,10 +38,10 @@ impl Drop for BusyGuard<'_> {
 
 impl AppState {
     pub fn new() -> Self {
-        let gemini = GeminiProvider::from_env();
-        println!("Provedor de IA: Gemini ({})", gemini.model());
+        let llm = llm::from_env();
+        println!("Provedor de IA: {}", llm.describe());
         Self {
-            llm: Box::new(gemini),
+            llm,
             hotkey_error: Mutex::new(None),
             busy: AtomicBool::new(false),
             session: Mutex::new(None),

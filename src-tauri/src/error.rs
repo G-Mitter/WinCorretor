@@ -26,10 +26,10 @@ pub enum AppError {
     #[error("Texto muito longo ({0} caracteres). O limite é {1}.")]
     TextTooLong(usize, usize),
 
-    #[error("Chave da API do Gemini não configurada. Crie o arquivo src-tauri/.env com GEMINI_API_KEY=...")]
+    #[error("Nenhuma chave de IA configurada. Coloque GROQ_API_KEY (ou GEMINI_API_KEY) no arquivo src-tauri/.env.")]
     MissingApiKey,
 
-    #[error("A chave da API do Gemini foi recusada. Confira o valor no arquivo .env.")]
+    #[error("A chave da API de IA foi recusada. Confira o valor no arquivo .env.")]
     InvalidApiKey,
 
     #[error(
@@ -37,13 +37,13 @@ pub enum AppError {
     )]
     RateLimited,
 
-    #[error("Sem conexão com o Gemini. Verifique a internet e tente de novo.")]
+    #[error("Sem conexão com a IA. Verifique a internet e tente de novo.")]
     Network,
 
-    #[error("O Gemini demorou demais para responder. Tente de novo.")]
+    #[error("A IA demorou demais para responder. Tente de novo.")]
     Timeout,
 
-    #[error("O Gemini recusou o texto ({0}).")]
+    #[error("A IA recusou o texto ({0}).")]
     Blocked(String),
 
     #[error("Erro no provedor de IA: {0}")]
