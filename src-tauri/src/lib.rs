@@ -10,6 +10,7 @@ mod flow;
 mod hotkey;
 mod llm;
 mod notify;
+mod popup;
 mod prompts;
 mod state;
 mod tray;
@@ -35,8 +36,10 @@ pub fn run() {
         .plugin(hotkey::plugin())
         .manage(AppState::new())
         .invoke_handler(tauri::generate_handler![
-            commands::process_clipboard_text,
-            commands::hotkey_error
+            commands::hotkey_error,
+            commands::popup_rewrite,
+            commands::popup_apply,
+            commands::popup_cancel
         ])
         .setup(|app| {
             tray::create(app.handle())?;
@@ -53,11 +56,23 @@ pub fn run() {
             }
             Ok(())
         })
-        // Fechar a janela só a esconde: o app continua na bandeja.
         .on_window_event(|window, event| {
-            if let WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                let _ = window.hide();
+            let is_popup = window.label() == popup::POPUP_LABEL;
+            match event {
+                // Fechar uma janela só a esconde: o app continua na bandeja.
+                WindowEvent::CloseRequested { api, .. } => {
+                    api.prevent_close();
+                    if is_popup {
+                        flow::cancel(window.app_handle(), false);
+                    } else {
+                        let _ = window.hide();
+                    }
+                }
+                // Clicou fora do popup: fecha sem alterar nada.
+                WindowEvent::Focused(false) if is_popup => {
+                    flow::cancel(window.app_handle(), false);
+                }
+                _ => {}
             }
         })
         .run(tauri::generate_context!())

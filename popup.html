@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WinCorretor</title>
+    <link rel="stylesheet" href="/src/popup.css" />
+    <script type="module" src="/src/popup.ts" defer></script>
+  </head>
+
+  <body>
+    <main class="popup">
+      <p id="snippet" class="snippet"></p>
+
+      <section id="view-tones">
+        <ul id="tones" class="tones" role="listbox" aria-label="Escolha o tom"></ul>
+        <p class="hint"><kbd>1</kbd>–<kbd>6</kbd> ou <kbd>↑</kbd><kbd>↓</kbd> + <kbd>Enter</kbd> · <kbd>Esc</kbd> fecha</p>
+      </section>
+
+      <section id="view-loading" hidden>
+        <p class="loading">Reescrevendo…</p>
+        <p class="hint"><kbd>Esc</kbd> cancela</p>
+      </section>
+
+      <section id="view-preview" hidden>
+        <p id="preview-label" class="label"></p>
+        <p id="preview" class="preview"></p>
+        <p class="hint"><kbd>Enter</kbd> aplica · <kbd>Esc</kbd> cancela</p>
+      </section>
+
+      <section id="view-error" hidden>
+        <p id="error" class="error"></p>
+        <p class="hint"><kbd>Esc</kbd> fecha</p>
+      </section>
+    </main>
+  </body>
+</html>

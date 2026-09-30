@@ -1,103 +1,134 @@
 // src-tauri/src/flow.rs
 //
-// Fluxo disparado pelo atalho:
-// captura a seleção → pede a correção à IA → cola o resultado no lugar.
-// Erros viram notificação do Windows, já que a janela do app fica escondida.
+// Fluxo disparado pelo atalho, agora em três etapas guiadas pelo popup:
+// 1. `run`: captura a seleção e abre o popup junto ao cursor;
+// 2. `rewrite`: o usuário escolhe o tom e a IA gera a prévia;
+// 3. `apply` ou `cancel`: cola o resultado no lugar ou desiste.
+// Erros viram notificação do Windows.
 
 use std::time::Instant;
 
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 use crate::capture::{self, PasteOutcome};
+use crate::error::{AppError, AppResult};
 use crate::notify;
+use crate::popup;
 use crate::prompts::TextStyle;
 use crate::state::AppState;
 
-/// Eventos enviados ao front-end.
+/// Eventos enviados à janela principal (tela de acompanhamento).
 pub const SELECTION_CAPTURED_EVENT: &str = "selection-captured";
 pub const CAPTURE_FAILED_EVENT: &str = "capture-failed";
 pub const REWRITE_DONE_EVENT: &str = "rewrite-done";
-pub const REWRITE_FAILED_EVENT: &str = "rewrite-failed";
-
-/// Estilo usado pelo atalho até existir o popup de escolha (Fase 2).
-const DEFAULT_STYLE: TextStyle = TextStyle::Grammar;
 
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RewriteDone {
     original: String,
     result: String,
-    style: TextStyle,
     outcome: PasteOutcome,
 }
 
-/// Executa o fluxo completo. Bloqueia: chame fora da thread da interface.
+/// Etapa 1. Bloqueia: chame fora da thread da interface.
 pub fn run<R: Runtime>(app: &AppHandle<R>) {
     let state = app.state::<AppState>();
 
-    // Ignora o atalho se a correção anterior ainda não terminou.
+    if state.has_session() {
+        println!("Atalho ignorado: o popup já está aberto.");
+        return;
+    }
     let Some(_busy) = state.try_begin_correction() else {
-        println!("Atalho ignorado: já existe uma correção em andamento.");
+        println!("Atalho ignorado: já existe uma captura em andamento.");
         return;
     };
 
     let started = Instant::now();
-
-    // 1. Captura
     let selection = match capture::capture_selection(app) {
         Ok(selection) => selection,
-        Err(err) => return fail(app, CAPTURE_FAILED_EVENT, &err.to_string()),
+        Err(err) => {
+            let _ = app.emit(CAPTURE_FAILED_EVENT, err.to_string());
+            return fail(app, &err);
+        }
     };
-    let captured_at = Instant::now();
     let _ = app.emit(SELECTION_CAPTURED_EVENT, selection.clone());
 
-    // 2. IA
-    let rewritten =
-        tauri::async_runtime::block_on(state.llm.rewrite(&selection.text, DEFAULT_STYLE));
-    let result = match rewritten {
-        Ok(result) => result,
-        Err(err) => return fail(app, REWRITE_FAILED_EVENT, &err.to_string()),
-    };
-    let rewritten_at = Instant::now();
-
-    // 3. Colar
-    let outcome = match capture::paste_result(app, &selection, &result) {
-        Ok(outcome) => outcome,
-        Err(err) => return fail(app, REWRITE_FAILED_EVENT, &err.to_string()),
-    };
-    let finished_at = Instant::now();
+    state.start_session(selection.clone());
+    if let Err(err) = popup::show_near_cursor(app, &selection) {
+        state.take_session();
+        return fail(app, &err);
+    }
 
     println!(
-        "Correção \"{}\" concluída ({outcome:?}) em {} ms: captura {} ms, IA {} ms, colar {} ms, {} caracteres.",
-        DEFAULT_STYLE.label(),
-        (finished_at - started).as_millis(),
-        (captured_at - started).as_millis(),
-        (rewritten_at - captured_at).as_millis(),
-        (finished_at - rewritten_at).as_millis(),
-        selection.text.chars().count(),
+        "Popup aberto em {} ms ({} caracteres capturados).",
+        started.elapsed().as_millis(),
+        selection.text.chars().count()
+    );
+}
+
+/// Etapa 2. Gera a prévia no tom escolhido e guarda na sessão.
+pub async fn rewrite<R: Runtime>(app: &AppHandle<R>, style: TextStyle) -> AppResult<String> {
+    let state = app.state::<AppState>();
+    let session = state.session().ok_or(AppError::NoSession)?;
+
+    let started = Instant::now();
+    let result = state.llm.rewrite(&session.selection.text, style).await?;
+    println!(
+        "IA respondeu (\"{}\") em {} ms.",
+        style.label(),
+        started.elapsed().as_millis()
     );
 
+    state.set_session_result(result.clone());
+    Ok(result)
+}
+
+/// Etapa 3a. Fecha o popup, devolve o foco à janela de origem e cola.
+/// Bloqueia: chame fora da thread da interface.
+pub fn apply<R: Runtime>(app: &AppHandle<R>) -> AppResult<()> {
+    let state = app.state::<AppState>();
+    let session = state.take_session().ok_or(AppError::NoSession)?;
+    let Some(result) = session.result else {
+        popup::hide(app);
+        return Err(AppError::NoSession);
+    };
+
+    popup::hide(app);
+    capture::restore_focus(&session.selection);
+
+    let outcome = capture::paste_result(app, &session.selection, &result)?;
+    println!("Resultado entregue: {outcome:?}");
     if outcome == PasteOutcome::CopiedOnly {
         notify::show(
             app,
-            "Você trocou de janela durante a correção. O resultado foi copiado: cole com Ctrl+V.",
+            "Não foi possível voltar para a janela original. O resultado foi copiado: cole com Ctrl+V.",
         );
     }
 
     let _ = app.emit(
         REWRITE_DONE_EVENT,
         RewriteDone {
-            original: selection.text,
+            original: session.selection.text,
             result,
-            style: DEFAULT_STYLE,
             outcome,
         },
     );
+    Ok(())
 }
 
-/// Registra a falha no terminal, avisa a janela e mostra uma notificação.
-fn fail<R: Runtime>(app: &AppHandle<R>, event: &str, message: &str) {
-    eprintln!("Falha: {message}");
-    let _ = app.emit(event, message);
-    notify::show(app, message);
+/// Etapa 3b. Fecha o popup sem mexer no texto.
+/// `return_focus`: devolve o foco à janela de origem (Esc). Falso quando o
+/// usuário clicou em outro lugar, para não roubar o foco de onde ele clicou.
+pub fn cancel<R: Runtime>(app: &AppHandle<R>, return_focus: bool) {
+    let session = app.state::<AppState>().take_session();
+    popup::hide(app);
+    if let (true, Some(session)) = (return_focus, session) {
+        capture::restore_focus(&session.selection);
+    }
+}
+
+/// Registra a falha no terminal e mostra uma notificação.
+fn fail<R: Runtime>(app: &AppHandle<R>, err: &AppError) {
+    eprintln!("Falha: {err}");
+    notify::show(app, &err.to_string());
 }

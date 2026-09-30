@@ -5,6 +5,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
+use crate::capture::Selection;
 use crate::llm::{GeminiProvider, LlmProvider};
 
 pub struct AppState {
@@ -13,6 +14,14 @@ pub struct AppState {
     hotkey_error: Mutex<Option<String>>,
     /// Verdadeiro enquanto uma correção está em andamento.
     busy: AtomicBool,
+    /// Correção aberta no popup: o texto capturado e, depois, o resultado da IA.
+    session: Mutex<Option<Session>>,
+}
+
+#[derive(Clone)]
+pub struct Session {
+    pub selection: Selection,
+    pub result: Option<String>,
 }
 
 /// Enquanto existir, marca o app como ocupado. Ao sair de escopo, libera.
@@ -32,7 +41,40 @@ impl AppState {
             llm: Box::new(gemini),
             hotkey_error: Mutex::new(None),
             busy: AtomicBool::new(false),
+            session: Mutex::new(None),
         }
+    }
+
+    /// Abre uma sessão no popup com o texto capturado.
+    pub fn start_session(&self, selection: Selection) {
+        if let Ok(mut slot) = self.session.lock() {
+            *slot = Some(Session {
+                selection,
+                result: None,
+            });
+        }
+    }
+
+    pub fn has_session(&self) -> bool {
+        self.session.lock().map(|s| s.is_some()).unwrap_or(false)
+    }
+
+    /// Cópia da sessão atual (para ler o texto sem segurar o lock durante a IA).
+    pub fn session(&self) -> Option<Session> {
+        self.session.lock().ok().and_then(|s| s.clone())
+    }
+
+    pub fn set_session_result(&self, result: String) {
+        if let Ok(mut slot) = self.session.lock() {
+            if let Some(session) = slot.as_mut() {
+                session.result = Some(result);
+            }
+        }
+    }
+
+    /// Encerra a sessão e devolve o que havia nela.
+    pub fn take_session(&self) -> Option<Session> {
+        self.session.lock().ok().and_then(|mut s| s.take())
     }
 
     pub fn set_hotkey_error(&self, message: String) {
@@ -66,6 +108,7 @@ mod tests {
             llm: Box::new(crate::llm::GeminiProvider::new(None, None)),
             hotkey_error: Mutex::new(None),
             busy,
+            session: Mutex::new(None),
         };
 
         let first = state.try_begin_correction();
@@ -74,5 +117,27 @@ mod tests {
 
         drop(first);
         assert!(state.try_begin_correction().is_some());
+    }
+
+    #[test]
+    fn sessao_guarda_texto_e_resultado() {
+        let state = AppState {
+            llm: Box::new(crate::llm::GeminiProvider::new(None, None)),
+            hotkey_error: Mutex::new(None),
+            busy: AtomicBool::new(false),
+            session: Mutex::new(None),
+        };
+        assert!(!state.has_session());
+
+        state.start_session(Selection {
+            text: "ola".into(),
+            source_window: 42,
+        });
+        state.set_session_result("Olá".into());
+
+        let session = state.take_session().expect("sessão aberta");
+        assert_eq!(session.selection.text, "ola");
+        assert_eq!(session.result.as_deref(), Some("Olá"));
+        assert!(!state.has_session());
     }
 }

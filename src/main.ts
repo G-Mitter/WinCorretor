@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
-// Tela de teste do fluxo: captura (#4) → correção pelo Gemini (#5) → colar no lugar (#6).
+// Tela de acompanhamento: mostra o último texto capturado e o resultado aplicado.
 // Na Fase 2 este arquivo vira a lógica do popup.
 
 type Selection = {
@@ -36,7 +36,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   if (hotkeyError) setStatus(`Atenção: ${hotkeyError}`);
 
   await listen<Selection>("selection-captured", (event) => {
-    setStatus("Corrigindo com o Gemini…");
+    setStatus("Popup aberto: escolha o tom.");
     show("captured", event.payload.text);
     show("result", "");
   });
