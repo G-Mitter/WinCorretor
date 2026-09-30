@@ -13,9 +13,13 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "text-corrector",
-        "width": 800,
-        "height": 600
+        "label": "main",
+        "title": "WinCorretor",
+        "width": 560,
+        "height": 480,
+        "center": true,
+        "visible": false,
+        "skipTaskbar": true
       }
     ],
     "security": {
