@@ -33,14 +33,6 @@ pub struct Selection {
     pub source_window: isize,
 }
 
-pub fn read_text<R: Runtime>(app: &AppHandle<R>) -> AppResult<String> {
-    let text = app.clipboard().read_text()?;
-    if text.trim().is_empty() {
-        return Err(AppError::EmptyText);
-    }
-    Ok(text)
-}
-
 pub fn write_text<R: Runtime>(app: &AppHandle<R>, text: &str) -> AppResult<()> {
     app.clipboard().write_text(text.to_owned())?;
     Ok(())
@@ -152,4 +144,21 @@ pub fn paste_result<R: Runtime>(
 ) -> AppResult<PasteOutcome> {
     write_text(app, text)?;
     Ok(PasteOutcome::CopiedOnly)
+}
+
+/// Devolve o foco à janela de origem (o popup roubou o foco para receber o teclado).
+#[cfg(windows)]
+pub fn restore_focus(selection: &Selection) -> bool {
+    use std::thread::sleep;
+    use std::time::Duration;
+
+    let ok = crate::win32::focus_window(selection.source_window);
+    // Dá tempo ao Windows de concluir a troca antes de simular teclas.
+    sleep(Duration::from_millis(60));
+    ok
+}
+
+#[cfg(not(windows))]
+pub fn restore_focus(_selection: &Selection) -> bool {
+    false
 }

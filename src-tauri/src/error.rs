@@ -6,9 +6,6 @@ use serde::{Serialize, Serializer};
 
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
-    #[error("Nenhum texto encontrado para processar.")]
-    EmptyText,
-
     // Usado só no Windows; em outros sistemas a captura não existe.
     #[cfg_attr(not(windows), allow(dead_code))]
     #[error("Nenhum texto selecionado. Selecione um texto antes de usar o atalho.")]
@@ -16,6 +13,12 @@ pub enum AppError {
 
     #[error("Não foi possível capturar a seleção: {0}")]
     Capture(String),
+
+    #[error("Erro no popup: {0}")]
+    Popup(String),
+
+    #[error("Nenhuma correção em andamento. Use o atalho de novo.")]
+    NoSession,
 
     #[error("Erro ao acessar a área de transferência: {0}")]
     Clipboard(String),

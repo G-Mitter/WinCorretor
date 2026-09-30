@@ -6,12 +6,13 @@
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
+use windows_sys::Win32::Foundation::HWND;
 use windows_sys::Win32::System::DataExchange::GetClipboardSequenceNumber;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
     KEYEVENTF_KEYUP, VIRTUAL_KEY, VK_C, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT, VK_V,
 };
-use windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+use windows_sys::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, SetForegroundWindow};
 
 /// Modificadores que podem continuar pressionados logo após o atalho.
 const HELD_KEYS: [VIRTUAL_KEY; 5] = [VK_CONTROL, VK_MENU, VK_SHIFT, VK_LWIN, VK_RWIN];
@@ -47,6 +48,15 @@ pub fn clipboard_sequence() -> u32 {
 /// Simula Ctrl+C na janela ativa.
 pub fn send_ctrl_c() -> bool {
     send_ctrl_plus(VK_C)
+}
+
+/// Traz de volta para a frente a janela onde o texto foi selecionado.
+/// Funciona porque, neste momento, o WinCorretor (popup) é a janela ativa.
+pub fn focus_window(hwnd: isize) -> bool {
+    if foreground_window() == hwnd {
+        return true;
+    }
+    unsafe { SetForegroundWindow(hwnd as HWND) != 0 }
 }
 
 /// Simula Ctrl+V na janela ativa.

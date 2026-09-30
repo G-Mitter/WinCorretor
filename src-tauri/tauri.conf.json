@@ -20,6 +20,20 @@
         "center": true,
         "visible": false,
         "skipTaskbar": true
+      },
+      {
+        "label": "popup",
+        "url": "popup.html",
+        "title": "WinCorretor",
+        "width": 340,
+        "height": 330,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "resizable": false,
+        "focus": true,
+        "shadow": true
       }
     ],
     "security": {
