@@ -33,6 +33,18 @@ pub struct Selection {
     pub source_window: isize,
 }
 
+/// Troca temporária do clipboard, escondida do histórico do Win+V quando possível.
+/// Se a forma "privada" falhar, usa a escrita normal para não quebrar o fluxo.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn write_temporary<R: Runtime>(app: &AppHandle<R>, text: &str) -> AppResult<()> {
+    #[cfg(windows)]
+    if crate::win32::set_clipboard_text_private(text) {
+        return Ok(());
+    }
+    write_text(app, text)
+}
+
+/// Escrita normal: usada quando o usuário QUER o texto no clipboard (ex.: "copiar").
 pub fn write_text<R: Runtime>(app: &AppHandle<R>, text: &str) -> AppResult<()> {
     app.clipboard().write_text(text.to_owned())?;
     Ok(())
@@ -78,7 +90,7 @@ pub fn capture_selection<R: Runtime>(app: &AppHandle<R>) -> AppResult<Selection>
 
     // Devolve o que o usuário tinha copiado antes (apenas texto, por enquanto).
     if let Some(previous) = previous {
-        let _ = app.clipboard().write_text(previous);
+        let _ = write_temporary(app, &previous);
     }
 
     if text.trim().is_empty() {
@@ -122,7 +134,7 @@ pub fn paste_result<R: Runtime>(
     }
 
     let previous = app.clipboard().read_text().ok();
-    write_text(app, text)?;
+    write_temporary(app, text)?;
 
     if !win32::send_ctrl_v() {
         // O resultado continua no clipboard: o usuário pode colar manualmente.
@@ -131,7 +143,7 @@ pub fn paste_result<R: Runtime>(
 
     sleep(PASTE_SETTLE);
     if let Some(previous) = previous {
-        let _ = app.clipboard().write_text(previous);
+        let _ = write_temporary(app, &previous);
     }
     Ok(PasteOutcome::Pasted)
 }
