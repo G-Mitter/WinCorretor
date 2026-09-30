@@ -3,7 +3,7 @@
 // Fluxo disparado pelo atalho, agora em três etapas guiadas pelo popup:
 // 1. `run`: captura a seleção e abre o popup junto ao cursor;
 // 2. `rewrite`: o usuário escolhe o tom e a IA gera a prévia;
-// 3. `apply` ou `cancel`: cola o resultado no lugar ou desiste.
+// 3. `apply`, `copy` ou `cancel`: cola no lugar, só copia ou desiste.
 // Erros viram notificação do Windows.
 
 use std::time::Instant;
@@ -59,6 +59,12 @@ pub fn run<R: Runtime>(app: &AppHandle<R>) {
         return fail(app, &err);
     }
 
+    // Enquanto o usuário escolhe o tom, já abre a conexão com a IA.
+    let handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        handle.state::<AppState>().llm.warm_up().await;
+    });
+
     println!(
         "Popup aberto em {} ms ({} caracteres capturados).",
         started.elapsed().as_millis(),
@@ -72,14 +78,27 @@ pub async fn rewrite<R: Runtime>(app: &AppHandle<R>, style: TextStyle) -> AppRes
     let session = state.session().ok_or(AppError::NoSession)?;
 
     let started = Instant::now();
-    let result = state.llm.rewrite(&session.selection.text, style).await?;
+    let result = state
+        .llm
+        .rewrite(&session.selection.text, style)
+        .await
+        .inspect_err(|err| {
+            eprintln!(
+                "IA falhou (\"{}\") após {} ms: {err}",
+                style.label(),
+                started.elapsed().as_millis()
+            )
+        })?;
     println!(
         "IA respondeu (\"{}\") em {} ms.",
         style.label(),
         started.elapsed().as_millis()
     );
 
-    state.set_session_result(result.clone());
+    // Se o usuário fechou o popup enquanto a IA respondia, descarta.
+    if !state.set_session_result(session.id, result.clone()) {
+        return Err(AppError::NoSession);
+    }
     Ok(result)
 }
 
@@ -116,7 +135,21 @@ pub fn apply<R: Runtime>(app: &AppHandle<R>) -> AppResult<()> {
     Ok(())
 }
 
-/// Etapa 3b. Fecha o popup sem mexer no texto.
+/// Etapa 3b. Só copia o resultado (sem colar e sem restaurar o clipboard),
+/// para o usuário colar onde quiser. Bloqueia: chame fora da thread da interface.
+pub fn copy<R: Runtime>(app: &AppHandle<R>) -> AppResult<()> {
+    let state = app.state::<AppState>();
+    let session = state.take_session().ok_or(AppError::NoSession)?;
+    popup::hide(app);
+    let result = session.result.ok_or(AppError::NoSession)?;
+
+    capture::write_text(app, &result)?;
+    capture::restore_focus(&session.selection);
+    println!("Resultado copiado para o clipboard.");
+    Ok(())
+}
+
+/// Etapa 3c. Fecha o popup sem mexer no texto.
 /// `return_focus`: devolve o foco à janela de origem (Esc). Falso quando o
 /// usuário clicou em outro lugar, para não roubar o foco de onde ele clicou.
 pub fn cancel<R: Runtime>(app: &AppHandle<R>, return_focus: bool) {

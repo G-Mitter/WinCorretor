@@ -111,3 +111,7 @@ kbd {
   margin: 8px 0;
   color: #c62828;
 }
+
+.error {
+  overflow-wrap: anywhere;
+}

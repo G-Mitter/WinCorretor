@@ -43,7 +43,11 @@ impl GeminiProvider {
     fn with_base_url(api_key: Option<String>, model: Option<String>, base_url: String) -> Self {
         let client = Client::builder()
             .connect_timeout(Duration::from_secs(5))
-            .timeout(Duration::from_secs(20))
+            .timeout(Duration::from_secs(15))
+            // Descarta conexões paradas antes que o servidor as derrube,
+            // evitando esperar por uma conexão "morta" (ex.: após trocar de rede).
+            .pool_idle_timeout(Duration::from_secs(60))
+            .tcp_keepalive(Duration::from_secs(30))
             .build()
             .unwrap_or_default();
         Self {
@@ -83,13 +87,10 @@ impl LlmProvider for GeminiProvider {
             .json(&body)
             .send()
             .await
-            .map_err(|e| AppError::Network(e.to_string()))?;
+            .map_err(network_error)?;
 
         let status = response.status();
-        let raw = response
-            .text()
-            .await
-            .map_err(|e| AppError::Network(e.to_string()))?;
+        let raw = response.text().await.map_err(network_error)?;
 
         if !status.is_success() {
             return Err(map_http_error(status, &raw));
@@ -98,6 +99,34 @@ impl LlmProvider for GeminiProvider {
         let parsed: GenerateResponse = serde_json::from_str(&raw)
             .map_err(|e| AppError::Llm(format!("resposta inesperada do Gemini: {e}")))?;
         extract_text(parsed)
+    }
+
+    async fn warm_up(&self) {
+        // Qualquer resposta serve: o objetivo é deixar a conexão TLS pronta no pool.
+        let started = std::time::Instant::now();
+        let result = self
+            .client
+            .head(&self.base_url)
+            .timeout(Duration::from_secs(5))
+            .send()
+            .await;
+        match result {
+            Ok(_) => println!(
+                "Conexão com o Gemini aquecida em {} ms.",
+                started.elapsed().as_millis()
+            ),
+            Err(err) => eprintln!("Aquecimento da conexão falhou: {err}"),
+        }
+    }
+}
+
+/// Traduz falhas de rede para mensagens simples; o detalhe técnico vai só para o terminal.
+fn network_error(err: reqwest::Error) -> AppError {
+    eprintln!("Detalhe da falha de rede: {err}");
+    if err.is_timeout() {
+        AppError::Timeout
+    } else {
+        AppError::Network
     }
 }
 
@@ -294,5 +323,15 @@ mod tests {
             .rewrite(&longo, TextStyle::Grammar)
             .await;
         assert!(matches!(result, Err(AppError::TextTooLong(_, _))));
+    }
+
+    #[tokio::test]
+    async fn sem_internet_vira_mensagem_simples() {
+        // Porta fechada no próprio computador: a conexão é recusada na hora.
+        let provider =
+            GeminiProvider::with_base_url(Some("k".into()), None, "http://127.0.0.1:9".into());
+        let result = provider.rewrite("texto", TextStyle::Grammar).await;
+        assert!(matches!(result, Err(AppError::Network)));
+        assert!(!AppError::Network.to_string().contains("http"));
     }
 }

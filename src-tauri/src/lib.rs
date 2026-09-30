@@ -39,6 +39,7 @@ pub fn run() {
             commands::hotkey_error,
             commands::popup_rewrite,
             commands::popup_apply,
+            commands::popup_copy,
             commands::popup_cancel
         ])
         .setup(|app| {

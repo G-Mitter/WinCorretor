@@ -29,6 +29,14 @@ pub async fn popup_apply(app: AppHandle) -> AppResult<()> {
         .map_err(|e| AppError::Popup(e.to_string()))?
 }
 
+/// Popup: só copia a prévia para o clipboard.
+#[tauri::command]
+pub async fn popup_copy(app: AppHandle) -> AppResult<()> {
+    tauri::async_runtime::spawn_blocking(move || flow::copy(&app))
+        .await
+        .map_err(|e| AppError::Popup(e.to_string()))?
+}
+
 /// Popup: fecha sem alterar nada e devolve o foco à janela de origem.
 #[tauri::command]
 pub async fn popup_cancel(app: AppHandle) {

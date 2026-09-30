@@ -37,8 +37,11 @@ pub enum AppError {
     )]
     RateLimited,
 
-    #[error("Sem conexão com o Gemini: {0}")]
-    Network(String),
+    #[error("Sem conexão com o Gemini. Verifique a internet e tente de novo.")]
+    Network,
+
+    #[error("O Gemini demorou demais para responder. Tente de novo.")]
+    Timeout,
 
     #[error("O Gemini recusou o texto ({0}).")]
     Blocked(String),

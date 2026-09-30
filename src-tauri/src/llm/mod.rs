@@ -19,4 +19,8 @@ pub const MAX_INPUT_CHARS: usize = 8_000;
 pub trait LlmProvider: Send + Sync {
     /// Reescreve `text` no estilo pedido e devolve só o texto final.
     async fn rewrite(&self, text: &str, style: TextStyle) -> AppResult<String>;
+
+    /// Abre a conexão com antecedência (enquanto o usuário escolhe o tom),
+    /// para o pedido de verdade não pagar o custo de conectar. Opcional.
+    async fn warm_up(&self) {}
 }
