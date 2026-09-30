@@ -9,13 +9,14 @@ use reqwest::{Client, StatusCode};
 use serde::Deserialize;
 use serde_json::json;
 
-use super::{LlmProvider, MAX_INPUT_CHARS};
+use super::{http_client, network_error, warm_up_connection, LlmProvider, MAX_INPUT_CHARS};
 use crate::error::{AppError, AppResult};
 use crate::prompts::{self, TextStyle};
 
 const DEFAULT_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
-/// Modelo leve e rápido da camada gratuita. Pode ser trocado pela variável GEMINI_MODEL.
-pub const DEFAULT_MODEL: &str = "gemini-3.5-flash-lite";
+/// Modelo da camada gratuita usado como reserva. Pode ser trocado pela variável GEMINI_MODEL.
+/// Medido em 30/09/2026: flash respondeu em 5–12 s e flash-lite em 7–15 s.
+pub const DEFAULT_MODEL: &str = "gemini-3.5-flash";
 
 pub struct GeminiProvider {
     client: Client,
@@ -29,37 +30,14 @@ impl GeminiProvider {
         Self::with_base_url(api_key, model, DEFAULT_BASE_URL.to_string())
     }
 
-    /// Lê GEMINI_API_KEY e GEMINI_MODEL das variáveis de ambiente (ou do .env).
-    pub fn from_env() -> Self {
-        let read = |name: &str| {
-            std::env::var(name)
-                .ok()
-                .map(|v| v.trim().to_string())
-                .filter(|v| !v.is_empty())
-        };
-        Self::new(read("GEMINI_API_KEY"), read("GEMINI_MODEL"))
-    }
-
     fn with_base_url(api_key: Option<String>, model: Option<String>, base_url: String) -> Self {
-        let client = Client::builder()
-            .connect_timeout(Duration::from_secs(5))
-            .timeout(Duration::from_secs(15))
-            // Descarta conexões paradas antes que o servidor as derrube,
-            // evitando esperar por uma conexão "morta" (ex.: após trocar de rede).
-            .pool_idle_timeout(Duration::from_secs(60))
-            .tcp_keepalive(Duration::from_secs(30))
-            .build()
-            .unwrap_or_default();
+        let client = http_client(Duration::from_secs(15));
         Self {
             client,
             api_key,
             model: model.unwrap_or_else(|| DEFAULT_MODEL.to_string()),
             base_url,
         }
-    }
-
-    pub fn model(&self) -> &str {
-        &self.model
     }
 }
 
@@ -102,31 +80,11 @@ impl LlmProvider for GeminiProvider {
     }
 
     async fn warm_up(&self) {
-        // Qualquer resposta serve: o objetivo é deixar a conexão TLS pronta no pool.
-        let started = std::time::Instant::now();
-        let result = self
-            .client
-            .head(&self.base_url)
-            .timeout(Duration::from_secs(5))
-            .send()
-            .await;
-        match result {
-            Ok(_) => println!(
-                "Conexão com o Gemini aquecida em {} ms.",
-                started.elapsed().as_millis()
-            ),
-            Err(err) => eprintln!("Aquecimento da conexão falhou: {err}"),
-        }
+        warm_up_connection(&self.client, &self.base_url, "Gemini").await;
     }
-}
 
-/// Traduz falhas de rede para mensagens simples; o detalhe técnico vai só para o terminal.
-fn network_error(err: reqwest::Error) -> AppError {
-    eprintln!("Detalhe da falha de rede: {err}");
-    if err.is_timeout() {
-        AppError::Timeout
-    } else {
-        AppError::Network
+    fn describe(&self) -> String {
+        format!("Gemini ({})", self.model)
     }
 }
 
