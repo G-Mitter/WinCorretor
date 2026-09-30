@@ -1,14 +1,15 @@
 // src-tauri/src/llm/mod.rs
 //
 // Contrato comum dos provedores de IA e a escolha de qual usar.
-// Hoje: Groq como principal (rápido) e Gemini como reserva automática.
+// Groq como principal (rápido) e Gemini como reserva automática.
 
 mod fallback;
-mod gemini;
-mod groq;
+pub mod gemini;
+pub mod groq;
 #[cfg(test)]
 mod mock;
 
+use std::sync::Arc;
 use std::time::Duration;
 
 pub use fallback::FallbackProvider;
@@ -36,31 +37,25 @@ pub trait LlmProvider: Send + Sync {
     fn describe(&self) -> String;
 }
 
-/// Monta o provedor a partir das chaves no ambiente (ou no .env):
-/// - GROQ_API_KEY e GEMINI_API_KEY → Groq com Gemini de reserva;
+/// Monta o provedor conforme as chaves disponíveis:
+/// - Groq e Gemini → Groq com Gemini de reserva;
 /// - só uma delas → só esse provedor;
 /// - nenhuma → Gemini, que avisa "chave não configurada" ao usar.
-pub fn from_env() -> Box<dyn LlmProvider> {
-    let groq_key = env_var("GROQ_API_KEY");
-    let gemini_key = env_var("GEMINI_API_KEY");
-
-    let gemini = GeminiProvider::new(gemini_key.clone(), env_var("GEMINI_MODEL"));
+pub fn build(
+    groq_key: Option<String>,
+    gemini_key: Option<String>,
+    groq_model: &str,
+    gemini_model: &str,
+) -> Arc<dyn LlmProvider> {
+    let groq = |key| GroqProvider::new(Some(key), Some(groq_model.to_string()));
+    let gemini = GeminiProvider::new(gemini_key.clone(), Some(gemini_model.to_string()));
     match (groq_key, gemini_key) {
-        (Some(key), Some(_)) => Box::new(FallbackProvider::new(
-            Box::new(GroqProvider::new(Some(key), env_var("GROQ_MODEL"))),
-            Box::new(gemini),
-        )),
-        (Some(key), None) => Box::new(GroqProvider::new(Some(key), env_var("GROQ_MODEL"))),
-        (None, _) => Box::new(gemini),
+        (Some(key), Some(_)) => {
+            Arc::new(FallbackProvider::new(Box::new(groq(key)), Box::new(gemini)))
+        }
+        (Some(key), None) => Arc::new(groq(key)),
+        (None, _) => Arc::new(gemini),
     }
-}
-
-/// Lê uma variável de ambiente, ignorando valores vazios.
-fn env_var(name: &str) -> Option<String> {
-    std::env::var(name)
-        .ok()
-        .map(|v| v.trim().to_string())
-        .filter(|v| !v.is_empty())
 }
 
 /// Cliente HTTP com os mesmos cuidados para todos os provedores.

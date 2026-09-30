@@ -9,6 +9,7 @@ use tauri::{AppHandle, Manager, Runtime};
 
 use crate::hotkey;
 use crate::notify;
+use crate::state::AppState;
 
 const TRAY_ID: &str = "main";
 const MENU_OPEN: &str = "open";
@@ -16,7 +17,7 @@ const MENU_PAUSE: &str = "pause";
 const MENU_QUIT: &str = "quit";
 
 pub fn create<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
-    let open = MenuItem::with_id(app, MENU_OPEN, "Abrir WinCorretor", true, None::<&str>)?;
+    let open = MenuItem::with_id(app, MENU_OPEN, "Configurações", true, None::<&str>)?;
     let pause =
         CheckMenuItem::with_id(app, MENU_PAUSE, "Pausar atalho", true, false, None::<&str>)?;
     let quit = MenuItem::with_id(app, MENU_QUIT, "Sair", true, None::<&str>)?;
@@ -24,7 +25,7 @@ pub fn create<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     let menu = Menu::with_items(app, &[&open, &pause, &separator, &quit])?;
 
     let mut builder = TrayIconBuilder::with_id(TRAY_ID)
-        .tooltip(tooltip(false))
+        .tooltip(tooltip(app))
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(move |app, event| match event.id().as_ref() {
@@ -65,29 +66,35 @@ pub fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
 }
 
 fn set_paused<R: Runtime>(app: &AppHandle<R>, paused: bool) {
-    let result = if paused {
-        hotkey::unregister_default(app)
-    } else {
-        hotkey::register_default(app)
-    };
+    let state = app.state::<AppState>();
+    let shortcut = state.settings().shortcut;
 
-    match result {
-        Ok(()) => {
-            if let Some(tray) = app.tray_by_id(TRAY_ID) {
-                let _ = tray.set_tooltip(Some(tooltip(paused)));
-            }
-        }
-        Err(err) => notify::show(app, &format!("Não foi possível alterar o atalho: {err}")),
+    // Pausado, o atalho é liberado para os outros programas usarem.
+    if paused {
+        hotkey::unregister(app, &shortcut);
+    } else if let Err(err) = hotkey::register(app, &shortcut) {
+        notify::show(app, &err.to_string());
+        return;
+    }
+    state.set_paused(paused);
+    refresh_tooltip(app);
+}
+
+/// Atualiza a dica do ícone (atalho atual ou "pausado").
+pub fn refresh_tooltip<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(tray) = app.tray_by_id(TRAY_ID) {
+        let _ = tray.set_tooltip(Some(tooltip(app)));
     }
 }
 
-fn tooltip(paused: bool) -> String {
-    if paused {
+fn tooltip<R: Runtime>(app: &AppHandle<R>) -> String {
+    let state = app.state::<AppState>();
+    if state.is_paused() {
         "WinCorretor (atalho pausado)".to_string()
     } else {
         format!(
             "WinCorretor: selecione um texto e aperte {}",
-            hotkey::DEFAULT_SHORTCUT
+            state.settings().shortcut
         )
     }
 }

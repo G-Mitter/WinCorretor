@@ -8,6 +8,8 @@ use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, Runtime};
 
 use crate::capture::Selection;
 use crate::error::{AppError, AppResult};
+use crate::prompts::TextStyle;
+use crate::state::AppState;
 
 pub const POPUP_LABEL: &str = "popup";
 pub const POPUP_OPEN_EVENT: &str = "popup-open";
@@ -22,6 +24,8 @@ const SNIPPET_CHARS: usize = 140;
 struct PopupOpen {
     snippet: String,
     total_chars: usize,
+    /// Tom que já vem selecionado (escolhido nas configurações).
+    default_style: TextStyle,
 }
 
 /// Posiciona o popup perto do mouse (sem sair da tela), mostra e dá foco.
@@ -66,6 +70,7 @@ pub fn show_near_cursor<R: Runtime>(app: &AppHandle<R>, selection: &Selection) -
         PopupOpen {
             snippet,
             total_chars: selection.text.chars().count(),
+            default_style: app.state::<AppState>().settings().default_style,
         },
     );
 

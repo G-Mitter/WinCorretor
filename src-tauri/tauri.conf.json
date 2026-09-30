@@ -14,9 +14,9 @@
     "windows": [
       {
         "label": "main",
-        "title": "WinCorretor",
-        "width": 560,
-        "height": 480,
+        "title": "WinCorretor — Configurações",
+        "width": 600,
+        "height": 720,
         "center": true,
         "visible": false,
         "skipTaskbar": true

@@ -4,20 +4,69 @@
     <meta charset="UTF-8" />
     <link rel="stylesheet" href="/src/styles.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>WinCorretor</title>
+    <title>WinCorretor — Configurações</title>
     <script type="module" src="/src/main.ts" defer></script>
   </head>
 
   <body>
-    <main class="container">
-      <h1>WinCorretor</h1>
-      <p>O WinCorretor fica na bandeja, perto do relógio. Fechar esta janela não encerra o app.</p>
-      <p>Selecione um texto e aperte <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>O</kbd>.</p>
-      <p id="status">Aguardando atalho…</p>
-      <h3 id="captured-title" hidden>Original</h3>
-      <pre id="captured"></pre>
-      <h3 id="result-title" hidden>Corrigido</h3>
-      <pre id="result"></pre>
+    <main class="settings">
+      <header>
+        <h1>WinCorretor</h1>
+        <p class="muted">Selecione um texto em qualquer programa e aperte <kbd id="shortcut-hint">Ctrl+Alt+O</kbd>. O app fica na bandeja; fechar esta janela não o encerra.</p>
+        <p id="alert" class="alert" hidden></p>
+      </header>
+
+      <form id="form">
+        <fieldset>
+          <legend>Uso</legend>
+          <label>
+            Atalho
+            <input id="shortcut" required placeholder="Ctrl+Alt+O" autocomplete="off" />
+            <small>Clique no campo e aperte a combinação desejada. Precisa ter Ctrl, Alt, Shift ou Win.</small>
+          </label>
+          <label>
+            Tom que já vem selecionado
+            <select id="defaultStyle">
+              <option value="grammar">Corrigir gramática</option>
+              <option value="professional">Profissional</option>
+              <option value="polite">Educado</option>
+              <option value="casual">Informal</option>
+              <option value="shorter">Resumir</option>
+              <option value="detailed">Detalhar</option>
+            </select>
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>IA</legend>
+          <p class="muted">As chaves ficam no Gerenciador de Credenciais do Windows, nunca em arquivo. Deixe o campo vazio para manter a chave atual.</p>
+          <label>
+            Chave do Groq (principal) <span id="groqKey-status" class="badge"></span>
+            <input id="groqKey" type="password" autocomplete="off" placeholder="gsk_…" />
+            <small>Chave gratuita em <b>console.groq.com/keys</b> · <button type="button" class="link" data-remove="groqKey">remover chave</button></small>
+          </label>
+          <label>
+            Modelo do Groq
+            <input id="groqModel" autocomplete="off" />
+          </label>
+          <label>
+            Chave do Gemini (reserva) <span id="geminiKey-status" class="badge"></span>
+            <input id="geminiKey" type="password" autocomplete="off" placeholder="AIza…" />
+            <small>Chave gratuita em <b>aistudio.google.com/apikey</b> · <button type="button" class="link" data-remove="geminiKey">remover chave</button></small>
+          </label>
+          <label>
+            Modelo do Gemini
+            <input id="geminiModel" autocomplete="off" />
+          </label>
+          <p class="muted">Em uso: <span id="provider"></span></p>
+        </fieldset>
+
+        <div class="actions">
+          <button type="button" id="test">Testar IA</button>
+          <button type="submit" id="save" class="primary">Salvar</button>
+        </div>
+        <p id="status" class="status" role="status"></p>
+      </form>
     </main>
   </body>
 </html>
