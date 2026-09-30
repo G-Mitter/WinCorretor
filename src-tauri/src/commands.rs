@@ -7,6 +7,7 @@ use std::time::Instant;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 
+use crate::autostart;
 use crate::error::{AppError, AppResult};
 use crate::flow;
 use crate::hotkey;
@@ -34,6 +35,8 @@ pub struct SettingsView {
     groq_key: KeySource,
     gemini_key: KeySource,
     provider: String,
+    /// Lido do Windows na hora, não do settings.json.
+    autostart: bool,
 }
 
 /// O que a tela envia ao salvar. Para cada chave:
@@ -47,6 +50,7 @@ pub struct SettingsInput {
     gemini_model: String,
     groq_key: Option<String>,
     gemini_key: Option<String>,
+    autostart: bool,
 }
 
 #[derive(Serialize)]
@@ -58,8 +62,8 @@ pub struct AiTest {
 }
 
 #[tauri::command]
-pub fn get_settings(state: State<'_, AppState>) -> SettingsView {
-    view(&state)
+pub fn get_settings(app: AppHandle) -> SettingsView {
+    view(&app)
 }
 
 #[tauri::command]
@@ -78,7 +82,10 @@ pub fn save_settings(app: AppHandle, input: SettingsInput) -> AppResult<Settings
     update_key(ApiKey::Groq, input.groq_key)?;
     update_key(ApiKey::Gemini, input.gemini_key)?;
 
-    // 2. Atalho: se o novo estiver em uso por outro programa, para aqui e mantém o antigo.
+    // 2. Iniciar com o Windows.
+    autostart::set(&app, input.autostart)?;
+
+    // 3. Atalho: se o novo estiver em uso por outro programa, para aqui e mantém o antigo.
     //    Se estiver pausado, só guarda: será registrado ao despausar.
     if !state.is_paused() {
         if state.hotkey_error().is_some() {
@@ -90,17 +97,17 @@ pub fn save_settings(app: AppHandle, input: SettingsInput) -> AppResult<Settings
     }
     state.set_hotkey_error(None);
 
-    // 3. Preferências em disco.
+    // 4. Preferências em disco.
     if let Some(path) = state.settings_path() {
         settings::save(path, &new)?;
     }
     state.set_settings(new);
 
-    // 4. Recria o provedor de IA com as chaves e modelos novos.
+    // 5. Recria o provedor de IA com as chaves e modelos novos.
     state.rebuild_llm();
     tray::refresh_tooltip(&app);
 
-    Ok(view(&state))
+    Ok(view(&app))
 }
 
 /// Faz uma correção de teste para o usuário ver se a chave funciona e quanto demora.
@@ -118,12 +125,14 @@ pub async fn test_ai(state: State<'_, AppState>) -> AppResult<AiTest> {
     })
 }
 
-fn view(state: &AppState) -> SettingsView {
+fn view(app: &AppHandle) -> SettingsView {
+    let state = app.state::<AppState>();
     SettingsView {
         settings: state.settings(),
         groq_key: secrets::resolve(ApiKey::Groq).1,
         gemini_key: secrets::resolve(ApiKey::Gemini).1,
         provider: state.llm().describe(),
+        autostart: autostart::is_enabled(app),
     }
 }
 

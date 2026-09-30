@@ -3,6 +3,7 @@
 // Ponto de entrada do app: só monta os plugins, o estado e os comandos.
 // Cada responsabilidade vive no seu próprio módulo.
 
+mod autostart;
 mod capture;
 mod commands;
 mod error;
@@ -37,6 +38,7 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(hotkey::plugin())
+        .plugin(autostart::plugin())
         .invoke_handler(tauri::generate_handler![
             commands::hotkey_error,
             commands::get_settings,
