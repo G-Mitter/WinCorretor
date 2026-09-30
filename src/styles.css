@@ -174,3 +174,15 @@ kbd {
   border: 1px solid var(--border);
   border-radius: 4px;
 }
+
+label.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+label.check input {
+  display: inline-block;
+  width: auto;
+  margin: 0;
+}

@@ -12,6 +12,7 @@ type SettingsView = {
   groqKey: KeySource;
   geminiKey: KeySource;
   provider: string;
+  autostart: boolean;
 };
 
 type AiTest = { provider: string; millis: number; sample: string };
@@ -40,6 +41,7 @@ function fill(view: SettingsView) {
   $<HTMLSelectElement>("defaultStyle").value = view.defaultStyle;
   input("groqModel").value = view.groqModel;
   input("geminiModel").value = view.geminiModel;
+  input("autostart").checked = view.autostart;
   input("groqKey").value = "";
   input("geminiKey").value = "";
   toRemove.clear();
@@ -70,6 +72,7 @@ async function save(event: SubmitEvent) {
         geminiModel: input("geminiModel").value,
         groqKey: keyChange("groqKey"),
         geminiKey: keyChange("geminiKey"),
+        autostart: input("autostart").checked,
       },
     });
     fill(view);
