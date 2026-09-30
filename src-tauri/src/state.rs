@@ -15,8 +15,8 @@ pub struct AppState {
     /// Provedor de IA atual. Trocado na hora quando o usuário muda chave ou modelo.
     llm: RwLock<Arc<dyn LlmProvider>>,
     settings: Mutex<Settings>,
-    /// Onde as preferências são salvas (None nos testes).
-    settings_path: Option<PathBuf>,
+    /// Onde as preferências são salvas (None até a inicialização e nos testes).
+    settings_path: Mutex<Option<PathBuf>>,
     /// Atalho pausado pelo menu da bandeja.
     paused: AtomicBool,
     /// Mensagem para o usuário quando o atalho global não pôde ser registrado.
@@ -52,7 +52,7 @@ impl AppState {
         Self {
             llm: RwLock::new(llm),
             settings: Mutex::new(settings),
-            settings_path,
+            settings_path: Mutex::new(settings_path),
             paused: AtomicBool::new(false),
             hotkey_error: Mutex::new(None),
             busy: AtomicBool::new(false),
@@ -86,8 +86,19 @@ impl AppState {
         self.settings.lock().map(|s| s.clone()).unwrap_or_default()
     }
 
-    pub fn settings_path(&self) -> Option<&PathBuf> {
-        self.settings_path.as_ref()
+    pub fn settings_path(&self) -> Option<PathBuf> {
+        self.settings_path.lock().ok().and_then(|p| p.clone())
+    }
+
+    /// Aplica as preferências lidas do disco na inicialização.
+    /// O estado já existe antes disso (com valores padrão), para que nenhum
+    /// evento de janela encontre o app sem estado.
+    pub fn configure(&self, settings: Settings, path: Option<PathBuf>) {
+        if let Ok(mut slot) = self.settings_path.lock() {
+            *slot = path;
+        }
+        self.set_settings(settings);
+        self.rebuild_llm();
     }
 
     pub fn set_settings(&self, settings: Settings) {
