@@ -6,6 +6,7 @@
 mod autostart;
 mod capture;
 mod commands;
+mod crashlog;
 mod error;
 mod flow;
 mod hotkey;
@@ -25,6 +26,8 @@ use tauri::{Manager, WindowEvent};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    crashlog::install();
+
     // Em desenvolvimento, as chaves também podem vir do arquivo src-tauri/.env (fora do Git).
     // O normal é salvá-las pela tela de configurações, no cofre do Windows.
     let _ = dotenvy::dotenv();
@@ -39,6 +42,9 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(hotkey::plugin())
         .plugin(autostart::plugin())
+        // O estado existe desde o início (com valores padrão). As janelas são
+        // criadas antes do `setup` e seus eventos já podem precisar dele.
+        .manage(AppState::new(settings::Settings::default(), None))
         .invoke_handler(tauri::generate_handler![
             commands::hotkey_error,
             commands::get_settings,
@@ -58,7 +64,7 @@ pub fn run() {
                 .map(|dir| dir.join("settings.json"));
             let loaded = path.as_deref().map(settings::load).unwrap_or_default();
             let shortcut = loaded.shortcut.clone();
-            app.manage(AppState::new(loaded, path));
+            app.state::<AppState>().configure(loaded, path);
 
             tray::create(app.handle())?;
 
@@ -70,6 +76,8 @@ pub fn run() {
                 notify::show(app.handle(), &message);
                 app.state::<AppState>().set_hotkey_error(Some(message));
             }
+
+            welcome(app.handle(), &shortcut);
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -93,4 +101,26 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("erro ao iniciar o WinCorretor");
+}
+
+/// Aberto pelo usuário (não pelo Windows no login): avisa que o app está na
+/// bandeja e, se ainda não há chave de IA, já abre as Configurações.
+fn welcome(app: &tauri::AppHandle, shortcut: &str) {
+    let by_autostart = std::env::args().any(|arg| arg == autostart::AUTOSTART_ARG);
+    if by_autostart {
+        return;
+    }
+
+    let has_key = [secrets::ApiKey::Groq, secrets::ApiKey::Gemini]
+        .into_iter()
+        .any(|key| secrets::resolve(key).0.is_some());
+
+    if has_key {
+        notify::show(
+            app,
+            &format!("WinCorretor está ativo na bandeja. Selecione um texto e aperte {shortcut}."),
+        );
+    } else {
+        tray::show_main_window(app);
+    }
 }

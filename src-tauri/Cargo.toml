@@ -1,6 +1,6 @@
 [package]
 name = "text-corrector"
-version = "0.1.0"
+version = "0.3.0"
 description = "Corretor de gramática e tom de texto para Windows"
 authors = ["Guilherme"]
 edition = "2021"

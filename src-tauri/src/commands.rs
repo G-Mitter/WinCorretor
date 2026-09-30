@@ -99,7 +99,7 @@ pub fn save_settings(app: AppHandle, input: SettingsInput) -> AppResult<Settings
 
     // 4. Preferências em disco.
     if let Some(path) = state.settings_path() {
-        settings::save(path, &new)?;
+        settings::save(&path, &new)?;
     }
     state.set_settings(new);
 
