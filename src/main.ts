@@ -1,62 +1,132 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 
-// Tela de acompanhamento: mostra o último texto capturado e o resultado aplicado.
-// Na Fase 2 este arquivo vira a lógica do popup.
+// Tela de configurações (janela principal, aberta pelo ícone da bandeja).
 
-type Selection = {
-  text: string;
-  sourceWindow: number;
+type KeySource = "vault" | "envFile" | "missing";
+
+type SettingsView = {
+  shortcut: string;
+  defaultStyle: string;
+  groqModel: string;
+  geminiModel: string;
+  groqKey: KeySource;
+  geminiKey: KeySource;
+  provider: string;
 };
 
-type RewriteDone = {
-  original: string;
-  result: string;
-  style: string;
-  outcome: "pasted" | "copiedOnly";
+type AiTest = { provider: string; millis: number; sample: string };
+
+const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+const input = (id: string) => $<HTMLInputElement>(id);
+
+const KEY_LABEL: Record<KeySource, string> = {
+  vault: "salva no Windows",
+  envFile: "vinda do .env",
+  missing: "não configurada",
 };
 
-const $ = (id: string) => document.getElementById(id);
+// Chaves marcadas para remoção ao salvar.
+const toRemove = new Set<string>();
 
-function show(id: string, text: string) {
-  const el = $(id);
-  if (el) el.textContent = text;
-  const title = $(`${id}-title`);
-  if (title) title.hidden = text.length === 0;
+function setStatus(text: string, kind: "ok" | "error" | "" = "") {
+  const el = $("status");
+  el.textContent = text;
+  el.className = `status ${kind}`;
 }
 
-function setStatus(text: string) {
-  const el = $("status");
-  if (el) el.textContent = text;
+function fill(view: SettingsView) {
+  input("shortcut").value = view.shortcut;
+  $("shortcut-hint").textContent = view.shortcut;
+  $<HTMLSelectElement>("defaultStyle").value = view.defaultStyle;
+  input("groqModel").value = view.groqModel;
+  input("geminiModel").value = view.geminiModel;
+  input("groqKey").value = "";
+  input("geminiKey").value = "";
+  toRemove.clear();
+  for (const key of ["groqKey", "geminiKey"] as const) {
+    const badge = $(`${key}-status`);
+    badge.textContent = KEY_LABEL[view[key]];
+    badge.dataset.source = view[key];
+  }
+  $("provider").textContent = view.provider;
+}
+
+/** undefined = manter · "" = remover · texto = nova chave */
+function keyChange(id: string): string | undefined {
+  const value = input(id).value.trim();
+  if (value) return value;
+  return toRemove.has(id) ? "" : undefined;
+}
+
+async function save(event: SubmitEvent) {
+  event.preventDefault();
+  setStatus("Salvando…");
+  try {
+    const view = await invoke<SettingsView>("save_settings", {
+      input: {
+        shortcut: input("shortcut").value,
+        defaultStyle: $<HTMLSelectElement>("defaultStyle").value,
+        groqModel: input("groqModel").value,
+        geminiModel: input("geminiModel").value,
+        groqKey: keyChange("groqKey"),
+        geminiKey: keyChange("geminiKey"),
+      },
+    });
+    fill(view);
+    $("alert").hidden = true;
+    setStatus("Configurações salvas.", "ok");
+  } catch (err) {
+    setStatus(String(err), "error");
+  }
+}
+
+async function testAi() {
+  setStatus("Testando a IA…");
+  try {
+    const result = await invoke<AiTest>("test_ai");
+    setStatus(`${result.provider} respondeu em ${result.millis} ms: "${result.sample}"`, "ok");
+  } catch (err) {
+    setStatus(String(err), "error");
+  }
+}
+
+/** Transforma o teclado pressionado no formato do atalho, ex.: "Ctrl+Alt+O". */
+function captureShortcut(event: KeyboardEvent) {
+  if (event.key === "Tab") return;
+  event.preventDefault();
+  if (["Control", "Alt", "Shift", "Meta"].includes(event.key)) return;
+
+  const parts: string[] = [];
+  if (event.ctrlKey) parts.push("Ctrl");
+  if (event.altKey) parts.push("Alt");
+  if (event.shiftKey) parts.push("Shift");
+  if (event.metaKey) parts.push("Super");
+
+  // event.code não depende do layout (ABNT2), ex.: "KeyO", "Digit5", "F8", "Space".
+  const code = event.code.replace(/^Key/, "").replace(/^Digit/, "");
+  parts.push(code);
+  input("shortcut").value = parts.join("+");
 }
 
 window.addEventListener("DOMContentLoaded", async () => {
-  // Avisa se o atalho global não pôde ser registrado.
+  input("shortcut").addEventListener("keydown", captureShortcut);
+  $("form").addEventListener("submit", save);
+  $("test").addEventListener("click", testAi);
+
+  document.querySelectorAll<HTMLButtonElement>("[data-remove]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const id = button.dataset.remove!;
+      toRemove.add(id);
+      input(id).value = "";
+      $(`${id}-status`).textContent = "será removida ao salvar";
+    });
+  });
+
+  fill(await invoke<SettingsView>("get_settings"));
+
   const hotkeyError = await invoke<string | null>("hotkey_error");
-  if (hotkeyError) setStatus(`Atenção: ${hotkeyError}`);
-
-  await listen<Selection>("selection-captured", (event) => {
-    setStatus("Popup aberto: escolha o tom.");
-    show("captured", event.payload.text);
-    show("result", "");
-  });
-
-  await listen<string>("capture-failed", (event) => {
-    setStatus(`Falha na captura: ${event.payload}`);
-    show("captured", "");
-    show("result", "");
-  });
-
-  await listen<RewriteDone>("rewrite-done", (event) => {
-    setStatus(
-      event.payload.outcome === "pasted"
-        ? "Pronto: texto substituído."
-        : "Você trocou de janela: o resultado foi copiado. Cole com Ctrl+V onde quiser.",
-    );
-    show("result", event.payload.result);
-  });
-
-  await listen<string>("rewrite-failed", (event) => {
-    setStatus(`Falha na IA: ${event.payload}`);
-  });
+  if (hotkeyError) {
+    $("alert").textContent = hotkeyError;
+    $("alert").hidden = false;
+  }
 });

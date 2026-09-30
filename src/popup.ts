@@ -9,6 +9,7 @@ type View = "tones" | "loading" | "preview" | "error";
 type PopupOpen = {
   snippet: string;
   totalChars: number;
+  defaultStyle: Style;
 };
 
 const TONES: { style: Style; label: string }[] = [
@@ -159,9 +160,9 @@ window.addEventListener("keydown", (event) => {
 
 listen<PopupOpen>("popup-open", (event) => {
   requestId++;
-  selected = 0;
   finishing = false;
-  const { snippet, totalChars } = event.payload;
+  const { snippet, totalChars, defaultStyle } = event.payload;
+  selected = Math.max(0, TONES.findIndex((tone) => tone.style === defaultStyle));
   $("snippet").textContent = totalChars > snippet.length ? `${snippet}…` : snippet;
   renderTones();
   show("tones");

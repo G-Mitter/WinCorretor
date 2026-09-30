@@ -62,7 +62,8 @@ pub fn run<R: Runtime>(app: &AppHandle<R>) {
     // Enquanto o usuário escolhe o tom, já abre a conexão com a IA.
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
-        handle.state::<AppState>().llm.warm_up().await;
+        let llm = handle.state::<AppState>().llm();
+        llm.warm_up().await;
     });
 
     println!(
@@ -79,7 +80,7 @@ pub async fn rewrite<R: Runtime>(app: &AppHandle<R>, style: TextStyle) -> AppRes
 
     let started = Instant::now();
     let result = state
-        .llm
+        .llm()
         .rewrite(&session.selection.text, style)
         .await
         .inspect_err(|err| {

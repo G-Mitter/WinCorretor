@@ -2,17 +2,26 @@
 //
 // Estado compartilhado, criado uma única vez na inicialização.
 
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, RwLock};
 
 use crate::capture::Selection;
 use crate::llm::{self, LlmProvider};
+use crate::secrets::{self, ApiKey};
+use crate::settings::Settings;
 
 pub struct AppState {
-    pub llm: Box<dyn LlmProvider>,
+    /// Provedor de IA atual. Trocado na hora quando o usuário muda chave ou modelo.
+    llm: RwLock<Arc<dyn LlmProvider>>,
+    settings: Mutex<Settings>,
+    /// Onde as preferências são salvas (None nos testes).
+    settings_path: Option<PathBuf>,
+    /// Atalho pausado pelo menu da bandeja.
+    paused: AtomicBool,
     /// Mensagem para o usuário quando o atalho global não pôde ser registrado.
     hotkey_error: Mutex<Option<String>>,
-    /// Verdadeiro enquanto uma correção está em andamento.
+    /// Verdadeiro enquanto uma captura está em andamento.
     busy: AtomicBool,
     /// Correção aberta no popup: o texto capturado e, depois, o resultado da IA.
     session: Mutex<Option<Session>>,
@@ -37,17 +46,75 @@ impl Drop for BusyGuard<'_> {
 }
 
 impl AppState {
-    pub fn new() -> Self {
-        let llm = llm::from_env();
+    pub fn new(settings: Settings, settings_path: Option<PathBuf>) -> Self {
+        let llm = build_llm(&settings);
         println!("Provedor de IA: {}", llm.describe());
         Self {
-            llm,
+            llm: RwLock::new(llm),
+            settings: Mutex::new(settings),
+            settings_path,
+            paused: AtomicBool::new(false),
             hotkey_error: Mutex::new(None),
             busy: AtomicBool::new(false),
             session: Mutex::new(None),
             next_session_id: AtomicU64::new(1),
         }
     }
+
+    // ---------- IA ----------
+
+    /// Provedor atual (cópia barata do ponteiro; não segura o lock durante a chamada).
+    pub fn llm(&self) -> Arc<dyn LlmProvider> {
+        self.llm
+            .read()
+            .map(|l| l.clone())
+            .unwrap_or_else(|p| p.into_inner().clone())
+    }
+
+    /// Recria o provedor com as chaves e modelos atuais.
+    pub fn rebuild_llm(&self) {
+        let llm = build_llm(&self.settings());
+        println!("Provedor de IA: {}", llm.describe());
+        if let Ok(mut slot) = self.llm.write() {
+            *slot = llm;
+        }
+    }
+
+    // ---------- Preferências ----------
+
+    pub fn settings(&self) -> Settings {
+        self.settings.lock().map(|s| s.clone()).unwrap_or_default()
+    }
+
+    pub fn settings_path(&self) -> Option<&PathBuf> {
+        self.settings_path.as_ref()
+    }
+
+    pub fn set_settings(&self, settings: Settings) {
+        if let Ok(mut slot) = self.settings.lock() {
+            *slot = settings;
+        }
+    }
+
+    pub fn is_paused(&self) -> bool {
+        self.paused.load(Ordering::SeqCst)
+    }
+
+    pub fn set_paused(&self, paused: bool) {
+        self.paused.store(paused, Ordering::SeqCst);
+    }
+
+    pub fn set_hotkey_error(&self, message: Option<String>) {
+        if let Ok(mut slot) = self.hotkey_error.lock() {
+            *slot = message;
+        }
+    }
+
+    pub fn hotkey_error(&self) -> Option<String> {
+        self.hotkey_error.lock().ok().and_then(|slot| slot.clone())
+    }
+
+    // ---------- Sessão do popup ----------
 
     /// Abre uma sessão no popup com o texto capturado.
     pub fn start_session(&self, selection: Selection) {
@@ -86,17 +153,7 @@ impl AppState {
         self.session.lock().ok().and_then(|mut s| s.take())
     }
 
-    pub fn set_hotkey_error(&self, message: String) {
-        if let Ok(mut slot) = self.hotkey_error.lock() {
-            *slot = Some(message);
-        }
-    }
-
-    pub fn hotkey_error(&self) -> Option<String> {
-        self.hotkey_error.lock().ok().and_then(|slot| slot.clone())
-    }
-
-    /// Começa uma correção, ou devolve `None` se já houver uma em andamento.
+    /// Começa uma captura, ou devolve `None` se já houver uma em andamento.
     pub fn try_begin_correction(&self) -> Option<BusyGuard<'_>> {
         if self.busy.swap(true, Ordering::SeqCst) {
             None
@@ -106,21 +163,35 @@ impl AppState {
     }
 }
 
+fn build_llm(settings: &Settings) -> Arc<dyn LlmProvider> {
+    let (groq_key, _) = secrets::resolve(ApiKey::Groq);
+    let (gemini_key, _) = secrets::resolve(ApiKey::Gemini);
+    llm::build(
+        groq_key,
+        gemini_key,
+        &settings.groq_model,
+        &settings.gemini_model,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn test_state() -> AppState {
+        AppState::new(Settings::default(), None)
+    }
+
+    fn selection() -> Selection {
+        Selection {
+            text: "ola".into(),
+            source_window: 42,
+        }
+    }
+
     #[test]
     fn so_uma_correcao_por_vez() {
-        let busy = AtomicBool::new(false);
-        let state = AppState {
-            llm: Box::new(crate::llm::GeminiProvider::new(None, None)),
-            hotkey_error: Mutex::new(None),
-            busy,
-            session: Mutex::new(None),
-            next_session_id: AtomicU64::new(1),
-        };
-
+        let state = test_state();
         let first = state.try_begin_correction();
         assert!(first.is_some());
         assert!(state.try_begin_correction().is_none());
@@ -131,19 +202,10 @@ mod tests {
 
     #[test]
     fn sessao_guarda_texto_e_resultado() {
-        let state = AppState {
-            llm: Box::new(crate::llm::GeminiProvider::new(None, None)),
-            hotkey_error: Mutex::new(None),
-            busy: AtomicBool::new(false),
-            session: Mutex::new(None),
-            next_session_id: AtomicU64::new(1),
-        };
+        let state = test_state();
         assert!(!state.has_session());
 
-        state.start_session(Selection {
-            text: "ola".into(),
-            source_window: 42,
-        });
+        state.start_session(selection());
         let id = state.session().expect("sessão aberta").id;
         assert!(state.set_session_result(id, "Olá".into()));
 
@@ -155,24 +217,22 @@ mod tests {
 
     #[test]
     fn resposta_atrasada_nao_entra_em_outra_sessao() {
-        let state = AppState {
-            llm: Box::new(crate::llm::GeminiProvider::new(None, None)),
-            hotkey_error: Mutex::new(None),
-            busy: AtomicBool::new(false),
-            session: Mutex::new(None),
-            next_session_id: AtomicU64::new(1),
-        };
-        let selection = Selection {
-            text: "texto".into(),
-            source_window: 1,
-        };
-
-        state.start_session(selection.clone());
+        let state = test_state();
+        state.start_session(selection());
         let old_id = state.session().unwrap().id;
         state.take_session(); // usuário cancelou
-        state.start_session(selection); // e abriu de novo
+        state.start_session(selection()); // e abriu de novo
 
         assert!(!state.set_session_result(old_id, "atrasada".into()));
         assert_eq!(state.session().unwrap().result, None);
+    }
+
+    #[test]
+    fn preferencias_podem_ser_trocadas() {
+        let state = test_state();
+        let mut settings = state.settings();
+        settings.shortcut = "Ctrl+Alt+K".into();
+        state.set_settings(settings);
+        assert_eq!(state.settings().shortcut, "Ctrl+Alt+K");
     }
 }

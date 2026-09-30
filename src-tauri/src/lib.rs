@@ -12,6 +12,8 @@ mod llm;
 mod notify;
 mod popup;
 mod prompts;
+mod secrets;
+mod settings;
 mod state;
 mod tray;
 #[cfg(windows)]
@@ -22,7 +24,8 @@ use tauri::{Manager, WindowEvent};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Em desenvolvimento, lê GEMINI_API_KEY do arquivo src-tauri/.env (fora do Git).
+    // Em desenvolvimento, as chaves também podem vir do arquivo src-tauri/.env (fora do Git).
+    // O normal é salvá-las pela tela de configurações, no cofre do Windows.
     let _ = dotenvy::dotenv();
 
     tauri::Builder::default()
@@ -34,26 +37,36 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(hotkey::plugin())
-        .manage(AppState::new())
         .invoke_handler(tauri::generate_handler![
             commands::hotkey_error,
+            commands::get_settings,
+            commands::save_settings,
+            commands::test_ai,
             commands::popup_rewrite,
             commands::popup_apply,
             commands::popup_copy,
             commands::popup_cancel
         ])
         .setup(|app| {
+            // Preferências salvas (ou padrão na primeira execução).
+            let path = app
+                .path()
+                .app_config_dir()
+                .ok()
+                .map(|dir| dir.join("settings.json"));
+            let loaded = path.as_deref().map(settings::load).unwrap_or_default();
+            let shortcut = loaded.shortcut.clone();
+            app.manage(AppState::new(loaded, path));
+
             tray::create(app.handle())?;
 
             // Se o atalho já estiver em uso, o app abre mesmo assim e avisa.
-            if let Err(err) = hotkey::register_default(app.handle()) {
-                let message = format!(
-                    "O atalho {} já está em uso. Feche outras janelas do WinCorretor (ou o programa que usa esse atalho) e reinicie.",
-                    hotkey::DEFAULT_SHORTCUT
-                );
-                eprintln!("{message} Detalhe: {err}");
+            if let Err(err) = hotkey::register(app.handle(), &shortcut) {
+                let message =
+                    format!("{err} Abra Configurações pelo ícone da bandeja para trocar o atalho.");
+                eprintln!("{message}");
                 notify::show(app.handle(), &message);
-                app.state::<AppState>().set_hotkey_error(message);
+                app.state::<AppState>().set_hotkey_error(Some(message));
             }
             Ok(())
         })

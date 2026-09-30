@@ -14,6 +14,15 @@ pub enum AppError {
     #[error("Não foi possível capturar a seleção: {0}")]
     Capture(String),
 
+    #[error("Erro nas configurações: {0}")]
+    Settings(String),
+
+    #[error("Atalho inválido: \"{0}\". Use o formato Ctrl+Alt+O.")]
+    InvalidShortcut(String),
+
+    #[error("O atalho {0} já está em uso por outro programa. Escolha outro.")]
+    ShortcutInUse(String),
+
     #[error("Erro no popup: {0}")]
     Popup(String),
 
