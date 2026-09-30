@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
-// Popup junto ao cursor: escolher o tom → ver a prévia → aplicar ou cancelar.
+// Popup junto ao cursor: escolher o tom → ver a prévia → aplicar, copiar ou cancelar.
 
 type Style = "grammar" | "professional" | "polite" | "casual" | "shorter" | "detailed";
 type View = "tones" | "loading" | "preview" | "error";
@@ -22,8 +22,10 @@ const TONES: { style: Style; label: string }[] = [
 
 let view: View = "tones";
 let selected = 0;
-// Invalida respostas antigas se o popup for reaberto durante uma chamada.
+// Invalida respostas antigas se o popup for reaberto ou o tom trocado durante uma chamada.
 let requestId = 0;
+// Evita apertar Enter duas vezes e colar em dobro.
+let finishing = false;
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -49,10 +51,17 @@ function renderTones() {
   });
 }
 
+function backToTones() {
+  requestId++;
+  renderTones();
+  show("tones");
+}
+
 async function choose(index: number) {
   selected = index;
   const tone = TONES[index];
   const current = ++requestId;
+  $("loading").textContent = `Reescrevendo (${tone.label})…`;
   show("loading");
 
   try {
@@ -68,16 +77,28 @@ async function choose(index: number) {
   }
 }
 
+/** Aplica (cola no lugar) ou copia a prévia; o popup fecha pelo lado do Rust. */
+async function finish(command: "popup_apply" | "popup_copy") {
+  if (finishing) return;
+  finishing = true;
+  try {
+    await invoke(command);
+  } catch (err) {
+    $("error").textContent = String(err);
+    show("error");
+  } finally {
+    finishing = false;
+  }
+}
+
 function cancel() {
   requestId++;
   invoke("popup_cancel");
 }
 
-function apply() {
-  invoke("popup_apply").catch((err) => {
-    $("error").textContent = String(err);
-    show("error");
-  });
+/** O usuário selecionou só um trecho da prévia com o mouse? Então deixa o Ctrl+C normal agir. */
+function hasPartialSelection() {
+  return (window.getSelection()?.toString().length ?? 0) > 0;
 }
 
 window.addEventListener("keydown", (event) => {
@@ -86,6 +107,8 @@ window.addEventListener("keydown", (event) => {
     cancel();
     return;
   }
+
+  const key = event.key.toLowerCase();
 
   if (view === "tones") {
     const number = Number(event.key);
@@ -103,15 +126,41 @@ window.addEventListener("keydown", (event) => {
       return;
     }
     event.preventDefault();
-  } else if (view === "preview" && event.key === "Enter") {
+    return;
+  }
+
+  if (view === "preview") {
+    if (event.key === "Enter") {
+      finish("popup_apply");
+    } else if (event.ctrlKey && key === "c" && !hasPartialSelection()) {
+      finish("popup_copy");
+    } else if (!event.ctrlKey && key === "r") {
+      choose(selected);
+    } else if (event.key === "ArrowLeft" || event.key === "Backspace") {
+      backToTones();
+    } else {
+      return;
+    }
     event.preventDefault();
-    apply();
+    return;
+  }
+
+  if (view === "error") {
+    if (event.key === "Enter" || key === "r") {
+      choose(selected);
+    } else if (event.key === "ArrowLeft" || event.key === "Backspace") {
+      backToTones();
+    } else {
+      return;
+    }
+    event.preventDefault();
   }
 });
 
 listen<PopupOpen>("popup-open", (event) => {
   requestId++;
   selected = 0;
+  finishing = false;
   const { snippet, totalChars } = event.payload;
   $("snippet").textContent = totalChars > snippet.length ? `${snippet}…` : snippet;
   renderTones();
