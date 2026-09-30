@@ -27,6 +27,13 @@ pub fn register_default<R: Runtime>(
     app.global_shortcut().register(DEFAULT_SHORTCUT)
 }
 
+/// Libera o atalho (usado ao pausar pela bandeja).
+pub fn unregister_default<R: Runtime>(
+    app: &AppHandle<R>,
+) -> Result<(), tauri_plugin_global_shortcut::Error> {
+    app.global_shortcut().unregister(DEFAULT_SHORTCUT)
+}
+
 fn on_shortcut<R: Runtime>(app: &AppHandle<R>, _shortcut: &Shortcut, event: ShortcutEvent) {
     // Dispara ao SOLTAR a tecla O: assim ela não fica repetindo e digitando
     // "o" por cima do texto selecionado durante a captura.
